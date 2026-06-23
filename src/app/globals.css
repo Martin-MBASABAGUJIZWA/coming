@@ -11,6 +11,10 @@
   box-sizing: border-box;
 }
 
+html {
+  background: #1a0533;
+}
+
 body {
   font-family: var(--font-nunito), sans-serif;
   background: linear-gradient(180deg, #1a0533 0%, #2d1b69 30%, #1a0533 100%);
