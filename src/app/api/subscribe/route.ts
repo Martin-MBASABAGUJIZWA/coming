@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "fs";
+import { neon } from "@neondatabase/serverless";
 import { resolveMx } from "dns/promises";
-import path from "path";
-
-const DATA_FILE = path.join(process.cwd(), "data", "subscribers.json");
 
 const DISPOSABLE_DOMAINS = new Set([
   "mailinator.com", "tempmail.com", "throwaway.email", "guerrillamail.com",
@@ -12,18 +9,22 @@ const DISPOSABLE_DOMAINS = new Set([
   "mailnesia.com", "maildrop.cc", "discard.email", "temp-mail.org",
 ]);
 
-async function readSubscribers(): Promise<{ email: string; subscribedAt: string }[]> {
-  try {
-    const data = await fs.readFile(DATA_FILE, "utf-8");
-    return JSON.parse(data);
-  } catch {
-    return [];
+function getDb() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is not set");
   }
+  return neon(process.env.DATABASE_URL);
 }
 
-async function writeSubscribers(subscribers: { email: string; subscribedAt: string }[]) {
-  await fs.mkdir(path.dirname(DATA_FILE), { recursive: true });
-  await fs.writeFile(DATA_FILE, JSON.stringify(subscribers, null, 2));
+async function ensureTable() {
+  const sql = getDb();
+  await sql`
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      subscribed_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
 }
 
 async function verifyEmailDomain(email: string): Promise<{ valid: boolean; code?: string }> {
@@ -67,22 +68,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ code: domainCheck.code }, { status: 400 });
     }
 
-    const subscribers = await readSubscribers();
+    await ensureTable();
+    const sql = getDb();
 
-    if (subscribers.some((s) => s.email === trimmed)) {
+    const existing = await sql`SELECT id FROM subscribers WHERE email = ${trimmed}`;
+    if (existing.length > 0) {
       return NextResponse.json({ code: "ALREADY" }, { status: 200 });
     }
 
-    subscribers.push({ email: trimmed, subscribedAt: new Date().toISOString() });
-    await writeSubscribers(subscribers);
+    await sql`INSERT INTO subscribers (email) VALUES (${trimmed})`;
 
     return NextResponse.json({ code: "SUCCESS" }, { status: 201 });
-  } catch {
+  } catch (err) {
+    console.error("Subscribe error:", err);
     return NextResponse.json({ code: "SERVER" }, { status: 500 });
   }
 }
 
 export async function GET() {
-  const subscribers = await readSubscribers();
-  return NextResponse.json({ count: subscribers.length, subscribers });
+  try {
+    await ensureTable();
+    const sql = getDb();
+    const rows = await sql`SELECT email, subscribed_at FROM subscribers ORDER BY subscribed_at DESC`;
+    return NextResponse.json({ count: rows.length, subscribers: rows });
+  } catch (err) {
+    console.error("List error:", err);
+    return NextResponse.json({ count: 0, subscribers: [] });
+  }
 }
