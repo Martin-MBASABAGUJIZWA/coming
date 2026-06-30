@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useLanguage } from "@/i18n/LanguageContext";
 import type { TranslationKey } from "@/i18n/translations";
 
-const TARGET_DATE = new Date("2026-07-01T00:00:00");
+const TARGET_DATE = new Date("2026-07-06T00:00:00");
 
 const UNIT_KEYS: { key: "days" | "hours" | "minutes" | "seconds"; label: TranslationKey }[] = [
   { key: "days", label: "days" },
